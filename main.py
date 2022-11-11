@@ -84,6 +84,7 @@ parser.add_argument('--dummy', action='store_true', help="use fake data to bench
 parser.add_argument('--augment', action='store_true', help="use data augmentation")
 parser.add_argument('--weight-sampler', action='store_true', help="use WeightedRandomSampler")
 parser.add_argument('--weight-loss', action='store_true', help="use weight parameter in the loss function")
+parser.add_argument('--print-model', action='store_true', help="print model")
 
 best_acc1 = 0
 
