@@ -21,6 +21,8 @@ import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Subset
 
+NUM_CLASS = 19
+
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(models.__dict__[name]))
@@ -79,6 +81,9 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
                          'fastest way to use PyTorch for either single node or '
                          'multi node data parallel training')
 parser.add_argument('--dummy', action='store_true', help="use fake data to benchmark")
+parser.add_argument('--augment', action='store_true', help="use data augmentation")
+parser.add_argument('--weight-sampler', action='store_true', help="use WeightedRandomSampler")
+parser.add_argument('--weight-loss', action='store_true', help="use weight parameter in the loss function")
 
 best_acc1 = 0
 
@@ -145,6 +150,7 @@ def main_worker(gpu, ngpus_per_node, args):
     else:
         print("=> creating model '{}'".format(args.arch))
         model = models.__dict__[args.arch]()
+    print(f"Model arch: {model}")
 
     if not torch.cuda.is_available() and not torch.backends.mps.is_available():
         print('using CPU, this will be slow')
@@ -235,23 +241,40 @@ def main_worker(gpu, ngpus_per_node, args):
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-        train_dataset = datasets.ImageFolder(
-            traindir,
-            transforms.Compose([
+        if args.augment:
+            print("Data augmentation is used!")
+            train_transform = transforms.Compose([
                 transforms.RandomResizedCrop(224),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 normalize,
-            ]))
-
-        val_dataset = datasets.ImageFolder(
-            valdir,
-            transforms.Compose([
+            ])
+            test_transform = transforms.Compose([
                 transforms.Resize(256),
                 transforms.CenterCrop(224),
                 transforms.ToTensor(),
                 normalize,
-            ]))
+            ])
+        else:
+            print("Data augmentation is NOT used!")
+            train_transform = transforms.Compose([
+                transforms.Resize(224),
+                transforms.ToTensor(),
+                normalize,
+            ])
+            test_transform = transforms.Compose([
+                transforms.Resize(224),
+                transforms.ToTensor(),
+                normalize,
+            ])
+
+        train_dataset = datasets.ImageFolder(
+            traindir, train_transform
+        )
+
+        val_dataset = datasets.ImageFolder(
+            valdir, test_transform
+        )
 
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
