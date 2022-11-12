@@ -159,7 +159,7 @@ def main_worker(gpu, ngpus_per_node, args):
         if args.augment:
             print("Data augmentation is used!")
             train_transform = transforms.Compose([
-                transforms.RandomResizedCrop(224),
+                transforms.RandomResizedCrop(224, (0.81, 1)),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 normalize,
@@ -173,12 +173,12 @@ def main_worker(gpu, ngpus_per_node, args):
         else:
             print("Data augmentation is NOT used!")
             train_transform = transforms.Compose([
-                transforms.Resize(224),
+                transforms.Resize((224, 224)),
                 transforms.ToTensor(),
                 normalize,
             ])
             test_transform = transforms.Compose([
-                transforms.Resize(224),
+                transforms.Resize((224, 224)),
                 transforms.ToTensor(),
                 normalize,
             ])
