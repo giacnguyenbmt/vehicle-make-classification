@@ -352,6 +352,8 @@ def main_worker(gpu, ngpus_per_node, args):
                 scheduler,
             )
             if early_stopping.early_stop:
+                print('Early Stopping')
+                print(f'Best validation loss: {early_stopping.val_loss_min}')
                 break
 
         elif not args.multiprocessing_distributed or (args.multiprocessing_distributed
