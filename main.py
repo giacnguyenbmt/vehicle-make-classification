@@ -317,7 +317,7 @@ def main_worker(gpu, ngpus_per_node, args):
     # init early_stopping
     if args.early_stopping:
         print("Early_stopping is used!")
-        early_stopping = EarlyStopping(5, verbose=True, save_full_model=True)
+        early_stopping = EarlyStopping(5, verbose=True, save_full_model=False)
 
     # Evaluation
     if args.evaluate:
