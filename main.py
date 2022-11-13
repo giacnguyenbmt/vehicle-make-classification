@@ -19,7 +19,8 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import StepLR
-from torch.utils.data import Subset
+from torch.utils.data import Subset, WeightedRandomSampler
+import numpy as np
 
 NUM_CLASS = 19
 
@@ -84,6 +85,7 @@ parser.add_argument('--dummy', action='store_true', help="use fake data to bench
 parser.add_argument('--augment', action='store_true', help="use data augmentation")
 parser.add_argument('--weight-sampler', action='store_true', help="use WeightedRandomSampler")
 parser.add_argument('--weight-loss', action='store_true', help="use weight parameter in the loss function")
+parser.add_argument('--early-stopping', action='store_true', help="use early stopping")
 parser.add_argument('--print-model', action='store_true', help="print model")
 
 best_acc1 = 0
@@ -194,6 +196,14 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
         val_sampler = torch.utils.data.distributed.DistributedSampler(val_dataset, shuffle=False, drop_last=True)
+    elif args.weight_sampler:
+        print("Data weighted spampler is used!")
+        targets = train_dataset.targets
+        _, count_ = torch.unique(torch.tensor(targets), return_counts=True)
+        class_weights = 1 / count_
+        train_samples_weight = torch.tensor([class_weights[class_id] for class_id in targets])
+        train_sampler = WeightedRandomSampler(train_samples_weight, len(train_samples_weight))
+        val_sampler = None
     else:
         train_sampler = None
         val_sampler = None
@@ -263,8 +273,16 @@ def main_worker(gpu, ngpus_per_node, args):
         device = torch.device("mps")
     else:
         device = torch.device("cpu")
+
     # define loss function (criterion), optimizer, and learning rate scheduler
-    criterion = nn.CrossEntropyLoss().to(device)
+    if args.weight_loss:
+        print("Data weighted spampler is used!")
+        targets = train_dataset.targets
+        _, count_ = torch.unique(torch.tensor(targets), return_counts=True)
+        class_weights = 1 / count_
+        criterion = nn.CrossEntropyLoss(class_weights).to(device)
+    else:
+        criterion = nn.CrossEntropyLoss().to(device)
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
@@ -296,6 +314,11 @@ def main_worker(gpu, ngpus_per_node, args):
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
+    # init early_stopping
+    if args.early_stopping:
+        print("Early_stopping is used!")
+        early_stopping = EarlyStopping(5, save_full_model=True)
+
     # Evaluation
     if args.evaluate:
         validate(val_loader, model, criterion, args)
@@ -310,15 +333,28 @@ def main_worker(gpu, ngpus_per_node, args):
         train(train_loader, model, criterion, optimizer, epoch, device, args)
 
         # evaluate on validation set
-        acc1 = validate(val_loader, model, criterion, args)
+        acc1, val_loss = validate(val_loader, model, criterion, args)
         
         scheduler.step()
-        
+
         # remember best acc@1 and save checkpoint
         is_best = acc1 > best_acc1
         best_acc1 = max(acc1, best_acc1)
 
-        if not args.multiprocessing_distributed or (args.multiprocessing_distributed
+        if args.early_stopping:
+            early_stopping(
+                val_loss, 
+                model,
+                epoch,
+                args.arch,
+                best_acc1,
+                optimizer,
+                scheduler,
+            )
+            if early_stopping.early_stop:
+                break
+
+        elif not args.multiprocessing_distributed or (args.multiprocessing_distributed
                 and args.rank % ngpus_per_node == 0):
             save_checkpoint({
                 'epoch': epoch + 1,
@@ -435,7 +471,7 @@ def validate(val_loader, model, criterion, args):
 
     progress.display_summary()
 
-    return top1.avg
+    return top1.avg, losses.avg
 
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
@@ -539,6 +575,75 @@ def accuracy(output, target, topk=(1,)):
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
 
+class EarlyStopping:
+    """Early stops the training if validation loss doesn't improve after a given patience."""
+    def __init__(self, patience=7, verbose=False, delta=0, path='checkpoint.pth.tar', trace_func=print, save_full_model=False):
+        """
+        Args:
+            patience (int): How long to wait after last time validation loss improved.
+                            Default: 7
+            verbose (bool): If True, prints a message for each validation loss improvement. 
+                            Default: False
+            delta (float): Minimum change in the monitored quantity to qualify as an improvement.
+                            Default: 0
+            path (str): Path for the checkpoint to be saved to.
+                            Default: 'checkpoint.pt'
+            trace_func (function): trace print function.
+                            Default: print            
+        """
+        self.patience = patience
+        self.verbose = verbose
+        self.counter = 0
+        self.best_score = None
+        self.early_stop = False
+        self.val_loss_min = np.Inf
+        self.delta = delta
+        self.path = path
+        self.trace_func = trace_func
+        self.save_full_model = save_full_model
+
+    def __call__(self, 
+        val_loss, 
+        model,
+        epoch,
+        arch,
+        best_acc1,
+        optimizer,
+        scheduler,
+    ):
+
+        score = -val_loss
+        state = {
+                'epoch': epoch + 1,
+                'arch': arch,
+                'state_dict': model.state_dict(),
+                'best_acc1': best_acc1,
+                'optimizer' : optimizer.state_dict(),
+                'scheduler' : scheduler.state_dict()
+            }
+
+        if self.best_score is None:
+            self.best_score = score
+            self.save_checkpoint(val_loss, state, model)
+        elif score < self.best_score + self.delta:
+            self.counter += 1
+            self.trace_func(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_score = score
+            self.save_checkpoint(val_loss, state, model)
+            self.counter = 0
+
+    def save_checkpoint(self, val_loss, state, model):
+        '''Saves model when validation loss decrease.'''
+        if self.verbose:
+            self.trace_func(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
+        if self.save_full_model:
+            torch.save(model, '{}.pth'.format(state['arch']))
+        else:
+            torch.save(state, self.path)
+        self.val_loss_min = val_loss
 
 if __name__ == '__main__':
     main()
