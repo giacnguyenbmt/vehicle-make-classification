@@ -162,7 +162,9 @@ def main_worker(gpu, ngpus_per_node, args):
             print("Data augmentation is used!")
             train_transform = transforms.Compose([
                 transforms.RandomResizedCrop(224, (0.81, 1)),
+                transforms.ColorJitter(0.3, 0.4, 0.3),
                 transforms.RandomHorizontalFlip(),
+                transforms.RandomRotation(10),
                 transforms.ToTensor(),
                 normalize,
             ])
