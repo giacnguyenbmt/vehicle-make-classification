@@ -31,8 +31,8 @@ model_names = sorted(name for name in models.__dict__
 parser = argparse.ArgumentParser(
     description='PyTorch Vehicle Make Classification Training'
 )
-parser.add_argument('data', metavar='DIR', nargs='?', default='vn_veri_wild',
-                    help='path to dataset (default: vn_veri_wild)')
+parser.add_argument('data', metavar='DIR', nargs='?', default='input.jpg',
+                    help='path to input (default: vn_veri_wild)')
 parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet50',
                     choices=model_names,
                     help='model architecture: ' +
@@ -72,8 +72,6 @@ parser.add_argument('--dist-url', default='tcp://224.66.41.62:23456', type=str,
                     help='url used to set up distributed training')
 parser.add_argument('--dist-backend', default='nccl', type=str,
                     help='distributed backend')
-parser.add_argument('--seed', default=None, type=int,
-                    help='seed for initializing training. ')
 parser.add_argument('--gpu', default=None, type=int,
                     help='GPU id to use.')
 parser.add_argument('--multiprocessing-distributed', action='store_true',
@@ -93,17 +91,6 @@ best_acc1 = 0
 
 def main():
     args = parser.parse_args()
-
-    if args.seed is not None:
-        random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        cudnn.deterministic = True
-        cudnn.benchmark = False
-        warnings.warn('You have chosen to seed training. '
-                      'This will turn on the CUDNN deterministic setting, '
-                      'which can slow down your training considerably! '
-                      'You may see unexpected behavior when restarting '
-                      'from checkpoints.')
 
     if args.gpu is not None:
         warnings.warn('You have chosen a specific GPU. This will completely '
@@ -135,7 +122,7 @@ def main_worker(gpu, ngpus_per_node, args):
     args.gpu = gpu
 
     if args.gpu is not None:
-        print("Use GPU: {} for training".format(args.gpu))
+        print("Use GPU: {} for inference".format(args.gpu))
 
     if args.distributed:
         if args.dist_url == "env://" and args.rank == -1:
@@ -160,15 +147,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
         if args.augment:
             print("Data augmentation is used!")
-            train_transform = transforms.Compose([
-                transforms.RandomResizedCrop(224, (0.81, 1)),
-                transforms.ColorJitter(0.3, 0.4, 0.3),
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomRotation(10),
-                transforms.ToTensor(),
-                normalize,
-            ])
-            test_transform = transforms.Compose([
+            inference_transform = transforms.Compose([
                 transforms.Resize(256),
                 transforms.CenterCrop(224),
                 transforms.ToTensor(),
@@ -176,48 +155,11 @@ def main_worker(gpu, ngpus_per_node, args):
             ])
         else:
             print("Data augmentation is NOT used!")
-            train_transform = transforms.Compose([
+            inference_transform = transforms.Compose([
                 transforms.Resize((224, 224)),
                 transforms.ToTensor(),
                 normalize,
             ])
-            test_transform = transforms.Compose([
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                normalize,
-            ])
-
-        train_dataset = datasets.ImageFolder(
-            traindir, train_transform
-        )
-
-        val_dataset = datasets.ImageFolder(
-            valdir, test_transform
-        )
-
-    if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-        val_sampler = torch.utils.data.distributed.DistributedSampler(val_dataset, shuffle=False, drop_last=True)
-    elif args.weight_sampler:
-        print("Data weighted spampler is used!")
-        targets = train_dataset.targets
-        _, count_ = torch.unique(torch.tensor(targets), return_counts=True)
-        class_weights = 1 / count_
-        train_samples_weight = torch.tensor([class_weights[class_id] for class_id in targets])
-        train_sampler = WeightedRandomSampler(train_samples_weight, len(train_samples_weight))
-        val_sampler = None
-    else:
-        train_sampler = None
-        val_sampler = None
-
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
-        num_workers=args.workers, pin_memory=True, sampler=train_sampler)
-
-    val_loader = torch.utils.data.DataLoader(
-        val_dataset, batch_size=args.batch_size, shuffle=False,
-        num_workers=args.workers, pin_memory=True, sampler=val_sampler)
-    class_names = train_dataset.classes
 
     # create model
     if args.pretrained:
@@ -227,7 +169,7 @@ def main_worker(gpu, ngpus_per_node, args):
         print("=> creating model '{}'".format(args.arch))
         model = models.__dict__[args.arch]()
     num_ftrs = model.fc.in_features
-    model.fc = nn.Linear(num_ftrs, len(class_names))
+    model.fc = nn.Linear(num_ftrs, NUM_CLASS)
     if args.print_model:
         print(f"Model arch: {model}")
 
@@ -275,23 +217,6 @@ def main_worker(gpu, ngpus_per_node, args):
         device = torch.device("mps")
     else:
         device = torch.device("cpu")
-
-    # define loss function (criterion), optimizer, and learning rate scheduler
-    if args.weight_loss:
-        print("Data weighted spampler is used!")
-        targets = train_dataset.targets
-        _, count_ = torch.unique(torch.tensor(targets), return_counts=True)
-        class_weights = 1 / count_
-        criterion = nn.CrossEntropyLoss(class_weights).to(device)
-    else:
-        criterion = nn.CrossEntropyLoss().to(device)
-
-    optimizer = torch.optim.SGD(model.parameters(), args.lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
-    
-    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
     
     # optionally resume from a checkpoint
     if args.resume:
@@ -381,24 +306,6 @@ def validate(val_loader, model, criterion, args):
     progress.display_summary()
 
     return top1.avg, losses.avg
-
-
-
-def accuracy(output, target, topk=(1,)):
-    """Computes the accuracy over the k top predictions for the specified values of k"""
-    with torch.no_grad():
-        maxk = max(topk)
-        batch_size = target.size(0)
-
-        _, pred = output.topk(maxk, 1, True, True)
-        pred = pred.t()
-        correct = pred.eq(target.view(1, -1).expand_as(pred))
-
-        res = []
-        for k in topk:
-            correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
-            res.append(correct_k.mul_(100.0 / batch_size))
-        return res
 
 if __name__ == '__main__':
     main()
