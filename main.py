@@ -581,7 +581,7 @@ def accuracy(output, target, topk=(1,)):
 
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
-    def __init__(self, patience=7, verbose=False, delta=0, path='checkpoint.pth.tar', trace_func=print, save_full_model=False):
+    def __init__(self, patience=7, verbose=False, delta=0, path='{}.pth.tar', trace_func=print, save_full_model=False):
         """
         Args:
             patience (int): How long to wait after last time validation loss improved.
@@ -646,7 +646,7 @@ class EarlyStopping:
         if self.save_full_model:
             torch.save(model, '{}.pth'.format(state['arch']))
         else:
-            torch.save(state, self.path)
+            torch.save(state, self.path.format(state['arch']))
         self.val_loss_min = val_loss
 
 if __name__ == '__main__':
