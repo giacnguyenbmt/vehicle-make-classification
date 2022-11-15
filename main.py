@@ -620,7 +620,7 @@ class EarlyStopping:
         state = {
                 'epoch': epoch + 1,
                 'arch': arch,
-                'state_dict': model.state_dict(),
+                'state_dict': model.module.state_dict(),
                 'best_acc1': best_acc1,
                 'optimizer' : optimizer.state_dict(),
                 'scheduler' : scheduler.state_dict()
