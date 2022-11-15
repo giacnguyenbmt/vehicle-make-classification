@@ -33,9 +33,11 @@ parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet50',
                     help='model architecture: ' +
                         ' | '.join(model_names) +
                         ' (default: resnet50)')
-parser.add_argument('-b', '--batch-size', default=1, type=int,
+parser.add_argument('-j', '--workers', default=2, type=int, metavar='N',
+                    help='number of data loading workers (default: 2)')
+parser.add_argument('-b', '--batch-size', default=256, type=int,
                     metavar='N',
-                    help='mini-batch size (default: 1)')
+                    help='mini-batch size (default: 256)')
 parser.add_argument('-p', '--print-freq', default=10, type=int,
                     metavar='N', help='print frequency (default: 10)')
 parser.add_argument('--checkpoint', default='', type=str, metavar='PATH',
@@ -77,7 +79,7 @@ def main_worker(args):
     val_sampler = None
     val_loader = torch.utils.data.DataLoader(
         val_dataset, batch_size=args.batch_size, shuffle=False,
-        num_workers=0, pin_memory=False, sampler=val_sampler)
+        num_workers=args.workers, pin_memory=True, sampler=val_sampler)
     class_names = val_dataset.classes
 
 
@@ -111,7 +113,9 @@ def main_worker(args):
             loc = 'cpu'
             print("=> Load location:", loc)
             checkpoint = torch.load(args.checkpoint, map_location=loc)
-        model.load_state_dict(remove_module_in_state_dict(checkpoint['state_dict']))
+        model.load_state_dict(
+            remove_module_in_state_dict(checkpoint['state_dict'])
+        )
 
         if not torch.cuda.is_available():
             model.to(device)
@@ -125,7 +129,7 @@ def main_worker(args):
                 .format(args.checkpoint, checkpoint['epoch']))
 
 
-        validate()
+        validate(val_loader, model, args, device)
 
         # model.eval()
 
@@ -206,28 +210,22 @@ def remove_module_in_state_dict(state_dict):
             new_state_dict[k] = v
     return new_state_dict
 
-def validate(val_loader, model, criterion, args):
+def validate(val_loader, model, args, device):
 
     def run_validate(loader, base_progress=0):
         with torch.no_grad():
             end = time.time()
             for i, (images, target) in enumerate(loader):
                 i = base_progress + i
-                if args.gpu is not None and torch.cuda.is_available():
-                    images = images.cuda(args.gpu, non_blocking=True)
-                # if torch.backends.mps.is_available():
-                #     images = images.to('mps')
-                #     target = target.to('mps')
                 if torch.cuda.is_available():
-                    target = target.cuda(args.gpu, non_blocking=True)
+                    images = images.to(device, non_blocking=True)
+                    target = target.to(device, non_blocking=True)
 
                 # compute output
                 output = model(images)
-                loss = criterion(output, target)
 
                 # measure accuracy and record loss
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
-                losses.update(loss.item(), images.size(0))
                 top1.update(acc1[0], images.size(0))
                 top5.update(acc5[0], images.size(0))
 
@@ -239,12 +237,11 @@ def validate(val_loader, model, criterion, args):
                     progress.display(i + 1)
 
     batch_time = AverageMeter('Time', ':6.3f', Summary.NONE)
-    losses = AverageMeter('Loss', ':.4e', Summary.NONE)
     top1 = AverageMeter('Acc@1', ':6.2f', Summary.AVERAGE)
     top5 = AverageMeter('Acc@5', ':6.2f', Summary.AVERAGE)
     progress = ProgressMeter(
         len(val_loader), # + (args.distributed and (len(val_loader.sampler) * args.world_size < len(val_loader.dataset))),
-        [batch_time, losses, top1, top5],
+        [batch_time, top1, top5],
         prefix='Test: ')
 
     # switch to evaluate mode
@@ -254,7 +251,7 @@ def validate(val_loader, model, criterion, args):
 
     progress.display_summary()
 
-    return top1.avg, losses.avg
+    return top1.avg
 
 
 class Summary(Enum):
