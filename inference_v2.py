@@ -105,8 +105,10 @@ def main_worker(args):
             next(model.parameters()).device
         )
         
-
-        print("=> loaded checkpoint '{}' (epoch {})"
+        if checkpoint.get('epoch', None) is None:
+            print("=> loaded checkpoint '{}'".format(args.checkpoint))
+        else:
+            print("=> loaded checkpoint '{}' (epoch {})"
                 .format(args.checkpoint, checkpoint['epoch']))
 
         model.eval()
