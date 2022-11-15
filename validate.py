@@ -5,6 +5,7 @@ import time
 from enum import Enum
 from collections import OrderedDict
 
+import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -16,6 +17,8 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 import torchvision.transforms as transforms
 from PIL import Image
+from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import precision_score, recall_score, confusion_matrix
 
 NUM_CLASS = 19
 
@@ -133,30 +136,34 @@ def main_worker(args):
 
 
         validate(val_loader, model, args, device)
-
-        # model.eval()
-
-        # with open(args.data, 'rb') as f:
-        #     image_bytes = f.read()
-        #     tensor = transform_image(image_bytes, inference_transform, device)
-        # with torch.no_grad():
-        #     class_name = get_prediction(tensor, model)
-        # print(class_name)
         
     else:
         print("=> no checkpoint found at '{}'".format(args.checkpoint))
         return
-    
-def transform_image(image_bytes, inference_transform, device):
-    image = Image.open(io.BytesIO(image_bytes))
-    image = inference_transform(image).unsqueeze(0).to(device)
-    return image
 
-def get_prediction(tensor, model):
-    outputs = model.forward(tensor)
-    _, y_hat = outputs.max(1)
-    predicted_idx = y_hat.item()
-    return pred2name(predicted_idx)
+def pred2id(pred):
+    pred2id = {
+        0: 0,
+        1: 1,
+        2: 10,
+        3: 11,
+        4: 12,
+        5: 13,
+        6: 14,
+        7: 15,
+        8: 16,
+        9: 17,
+        10: 18,
+        11: 2,
+        12: 3,
+        13: 4,
+        14: 5,
+        15: 6,
+        16: 7,
+        17: 8,
+        18: 9
+    }
+    return pred2id[pred]
 
 def pred2name(pred):
     pred2id = {
@@ -218,6 +225,8 @@ def validate(val_loader, model, args, device):
     def run_validate(loader, base_progress=0):
         with torch.no_grad():
             end = time.time()
+            entire_pred = torch.tensor([]).to(device)
+            entire_gt = torch.tensor([]).to(device)
             for i, (images, target) in enumerate(loader):
                 i = base_progress + i
                 if torch.cuda.is_available():
@@ -226,6 +235,13 @@ def validate(val_loader, model, args, device):
 
                 # compute output
                 output = model(images)
+                _, pred = output.topk(1, 1, True, True)
+                entire_pred = torch.cat(
+                    [entire_pred, pred.t().squeeze()]
+                )
+                entire_gt = torch.cat(
+                    [entire_gt, target.view(1, -1)]
+                )
 
                 # measure accuracy and record loss
                 acc1, acc5 = accuracy(output, target, topk=(1, 5))
@@ -238,6 +254,8 @@ def validate(val_loader, model, args, device):
 
                 if i % args.print_freq == 0:
                     progress.display(i + 1)
+            
+            return entire_gt.numpy(), entire_pred.numpy()
 
     batch_time = AverageMeter('Time', ':6.3f', Summary.NONE)
     top1 = AverageMeter('Acc@1', ':6.2f', Summary.AVERAGE)
@@ -250,9 +268,12 @@ def validate(val_loader, model, args, device):
     # switch to evaluate mode
     model.eval()
 
-    run_validate(val_loader)
-
+    gt, pred = run_validate(val_loader)
     progress.display_summary()
+
+    gt = np.vectorize(pred2id)(gt)
+    pred = np.vectorize(pred2id)(pred)
+    sklearn_metrics(gt, pred)
 
     return top1.avg
 
@@ -352,6 +373,20 @@ def accuracy(output, target, topk=(1,)):
             correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
+
+def sklearn_metrics(gt, pred):
+    acc = accuracy_score(gt, pred)
+    p = precision_score(gt, pred, average='weighted')
+    r = recall_score(gt, pred, average='weighted')
+    f1 = f1_score(gt, pred, average='weighted')
+    cm = confusion_matrix(gt, pred, normalize=None)
+
+    print('acc =', acc)
+    print('f1 =', f1)
+    print('precision =', p)
+    print('recall =', r)
+    print("Confusion matrix")
+    print(cm)
 
 if __name__ == '__main__':
     main()
