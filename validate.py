@@ -120,7 +120,7 @@ def main_worker(args):
             remove_module_in_state_dict(checkpoint['state_dict'])
         )
 
-        if not torch.cuda.is_available():
+        if torch.cuda.is_available():
             model.to(device)
         # Check model device
         print(
