@@ -1,7 +1,7 @@
 import argparse
 import os
 import io
-
+from collections import OrderedDict
 
 import torch
 import torch.nn as nn
@@ -76,8 +76,8 @@ def main_worker(args):
     
     if torch.cuda.is_available():
         device = torch.device("cuda")
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")
+    # elif torch.backends.mps.is_available():
+    #     device = torch.device("mps")
     else:
         device = torch.device("cpu")
     
@@ -88,25 +88,39 @@ def main_worker(args):
         if torch.cuda.is_available():
             checkpoint = torch.load(args.checkpoint)
         else:
-            checkpoint = torch.load(args.checkpoint, map_location=device)
-        
-        print(checkpoint)
-        model.load_state_dict(checkpoint['state_dict'])
-        # print("=> loaded checkpoint '{}' (epoch {})"
-        #         .format(args.checkpoint, checkpoint['epoch']))
+            # if torch.backends.mps.is_available():
+            #     loc = 'mps'
+            # else:
+            loc = 'cpu'
+            print("=> Load location:", loc)
+            checkpoint = torch.load(args.checkpoint, map_location=loc)
+        model.load_state_dict(remove_module_in_state_dict(checkpoint['state_dict']))
 
-    #     model.eval()
+        if not torch.cuda.is_available():
+            model.to(device)
 
-    #     with open(args.data, 'rb') as f:
-    #         image_bytes = f.read()
-    #         tensor = transform_image(image_bytes, inference_transform, device)
-    #     with torch.no_grad():
-    #         class_name = get_prediction(tensor, model)
-    #     print(class_name)
+        # Check model device
+        print(
+            "=> Device which model is using:", 
+            next(model.parameters()).device
+        )
         
-    # else:
-    #     print("=> no checkpoint found at '{}'".format(args.checkpoint))
-    #     return
+
+        print("=> loaded checkpoint '{}' (epoch {})"
+                .format(args.checkpoint, checkpoint['epoch']))
+
+        model.eval()
+
+        with open(args.data, 'rb') as f:
+            image_bytes = f.read()
+            tensor = transform_image(image_bytes, inference_transform, device)
+        with torch.no_grad():
+            class_name = get_prediction(tensor, model)
+        print(class_name)
+        
+    else:
+        print("=> no checkpoint found at '{}'".format(args.checkpoint))
+        return
     
 def transform_image(image_bytes, inference_transform, device):
     image = Image.open(io.BytesIO(image_bytes))
@@ -163,6 +177,16 @@ def pred2name(pred):
         '18': 'Volvo',
     }
     return id2name[pred2id[pred]]
+
+def remove_module_in_state_dict(state_dict):
+    new_state_dict = OrderedDict()
+    for k, v in state_dict.items():
+        name_ = 'module.' # remove `module.`
+        if k.startswith(name_):
+            new_state_dict[k[len(name_):]] = v
+        else:
+            new_state_dict[k] = v
+    return new_state_dict
 
 if __name__ == '__main__':
     main()
