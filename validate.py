@@ -6,8 +6,6 @@ from enum import Enum
 from collections import OrderedDict
 
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -19,8 +17,6 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 import torchvision.transforms as transforms
 from PIL import Image
-from sklearn.metrics import accuracy_score, f1_score
-from sklearn.metrics import precision_score, recall_score, confusion_matrix
 
 NUM_CLASS = 19
 
@@ -49,6 +45,7 @@ parser.add_argument('--checkpoint', default='', type=str, metavar='PATH',
                     help='path to checkpoint (default: none)')
 parser.add_argument('--augment', action='store_true', help="use data augmentation")
 parser.add_argument('--print-model', action='store_true', help="print model")
+parser.add_argument('--save-pred', action='store_true', help="save pred")
 
 
 def main():
@@ -80,6 +77,14 @@ def main_worker(args):
     val_dataset = datasets.ImageFolder(
         valdir, val_transform
     )
+    if args.save_pred:
+        class_2_id = val_dataset.class_to_idx
+        id_2_class = dict(i[::-1] for i in class_2_id.items())
+        image_list = val_dataset.imgs
+        args.save_pred = {
+            'id2class': id_2_class,
+            'img_list': image_list
+        }
 
     val_sampler = None
     val_loader = torch.utils.data.DataLoader(
@@ -228,7 +233,6 @@ def validate(val_loader, model, args, device):
         with torch.no_grad():
             end = time.time()
             entire_pred = torch.tensor([]).to(device)
-            entire_gt = torch.tensor([]).to(device)
             for i, (images, target) in enumerate(loader):
                 i = base_progress + i
                 if torch.cuda.is_available():
@@ -240,9 +244,6 @@ def validate(val_loader, model, args, device):
                 _, pred = output.topk(1, 1, True, True)
                 entire_pred = torch.cat(
                     [entire_pred, pred.t().squeeze()]
-                )
-                entire_gt = torch.cat(
-                    [entire_gt, target]
                 )
 
                 # measure accuracy and record loss
@@ -257,7 +258,7 @@ def validate(val_loader, model, args, device):
                 if i % args.print_freq == 0:
                     progress.display(i + 1)
             
-            return entire_gt, entire_pred
+            return entire_pred
 
     batch_time = AverageMeter('Time', ':6.3f', Summary.NONE)
     top1 = AverageMeter('Acc@1', ':6.2f', Summary.AVERAGE)
@@ -270,13 +271,19 @@ def validate(val_loader, model, args, device):
     # switch to evaluate mode
     model.eval()
 
-    gt, pred = run_validate(val_loader)
+    pred = run_validate(val_loader)
     progress.display_summary()
 
-    gt = np.vectorize(pred2id)(gt.cpu().numpy())
-    pred = np.vectorize(pred2id)(pred.cpu().numpy())
-    sklearn_metrics(gt, pred, 'cm')
-
+    if args.save_pred:
+        pred = np.vectorize(pred2id)(pred.cpu().numpy()).tolist()
+        with open('pred_{}.txt'.format(args.arch), 'w') as f:
+            for idx, img in enumerate(args.save_pred['img_list']):
+                f.write('{} {} {}\n'.format(
+                    img[0],
+                    args.save_pred['id2class'][img[1]],
+                    # args.save_pred['id2class'][pred[idx]],
+                    pred[idx]
+                ))
     return top1.avg
 
 
@@ -375,38 +382,6 @@ def accuracy(output, target, topk=(1,)):
             correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
-
-def sklearn_metrics(gt, pred, save_name=None):
-    acc = accuracy_score(gt, pred)
-    p = precision_score(gt, pred, average='weighted')
-    r = recall_score(gt, pred, average='weighted')
-    f1 = f1_score(gt, pred, average='weighted')
-    cm = confusion_matrix(gt, pred, normalize=None)
-    normalized_cm = confusion_matrix(gt, pred, normalize='true')
-
-    print('acc =', acc)
-    print('f1 =', f1)
-    print('precision =', p)
-    print('recall =', r)
-    # print("Confusion matrix")
-    # print(cm)
-
-    if save_name:
-        base_name = os.path.splitext(save_name)[0]
-        nor_save_name = base_name + '_normalized'
-        plot_cm(cm, base_name)
-        plot_cm(normalized_cm, nor_save_name, False)
-
-def plot_cm(cm, save_name, annot=True):
-    fig, ax = plt.subplots(figsize=(16,16), dpi=100)
-    sns.heatmap(
-        cm, cmap='Blues', square=True, annot=annot, fmt='g', ax=ax
-    )
-    ax.set_xlabel('Predicted labels');ax.set_ylabel('True labels')
-    ax.set_title('Confusion Matrix')
-    ax.yaxis.set_ticklabels(range(cm.shape[0]))
-    ax.xaxis.set_ticklabels(range(cm.shape[0]))
-    plt.savefig('{}.png'.format(save_name))
 
 if __name__ == '__main__':
     main()
