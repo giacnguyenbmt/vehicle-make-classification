@@ -281,7 +281,8 @@ def validate(val_loader, model, args, device):
                 f.write('{} {} {}\n'.format(
                     img[0],
                     args.save_pred['id2class'][img[1]],
-                    args.save_pred['id2class'][pred[idx]],
+                    # args.save_pred['id2class'][pred[idx]],
+                    pred[idx]
                 ))
     return top1.avg
 
