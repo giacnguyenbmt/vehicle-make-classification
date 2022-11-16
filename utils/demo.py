@@ -1,5 +1,4 @@
 import argparse
-import io
 import os
 from collections import OrderedDict
 
@@ -33,11 +32,6 @@ parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet50',
                     help='model architecture: ' +
                         ' | '.join(model_names) +
                         ' (default: resnet50)')
-# parser.add_argument('-b', '--batch-size', default=256, type=int,
-#                     metavar='N',
-#                     help='mini-batch size (default: 256)')
-# parser.add_argument('-p', '--print-freq', default=10, type=int,
-#                     metavar='N', help='print frequency (default: 10)')
 parser.add_argument('--checkpoint', default='', type=str, metavar='PATH',
                     help='path to checkpoint (default: none)')
 parser.add_argument('--augment', action='store_true', help="use data augmentation")
@@ -49,13 +43,6 @@ def main():
     model, inference_transform, device = main_worker(args)
 
     mainsct(model, inference_transform, device)
-
-    # with open(args.data, 'rb') as f:
-    #     image_bytes = f.read()
-    #     tensor = transform_image(image_bytes, inference_transform, device)
-    # with torch.no_grad():
-    #     class_name = get_prediction(tensor, model)
-    # print(class_name)
 
 def infer(model, image, inference_transform, device):
     img = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -245,13 +232,6 @@ def mainsct(model, inference_transform, device):
         label, conf = infer(model, bbox_crop, inference_transform, device)
         labels, confs = [label], [conf]
         frame = draw(frame, bbox_coords, labels, confs)
-        # labels, confs = trafficlight.predict(frame, bbox_coords)
-        # frame = trafficlight.draw(frame, bbox_coords, labels, confs)
-
-        # result.write(frame)
-        # ratio = 0.8
-        # new_h, new_w = (np.array(frame.shape[:2]) * ratio).astype(np.int).tolist()
-        # frame = cv2.resize(frame, (new_w, new_h)) 
 
         cv2.imshow('frame', frame)
         if cv2.waitKey(1) & 0xFF == 27:
