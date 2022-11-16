@@ -48,15 +48,23 @@ def main():
     args = parser.parse_args()
     model, inference_transform, device = main_worker(args)
 
-    with open(args.data, 'rb') as f:
-        image_bytes = f.read()
-        tensor = transform_image(image_bytes, inference_transform, device)
+    mainsct(model, inference_transform, device)
+
+    # with open(args.data, 'rb') as f:
+    #     image_bytes = f.read()
+    #     tensor = transform_image(image_bytes, inference_transform, device)
+    # with torch.no_grad():
+    #     class_name = get_prediction(tensor, model)
+    # print(class_name)
+
+def infer(model, image, inference_transform, device):
+    img = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    im_pil = Image.fromarray(img)
+    tensor = transform_image(im_pil, inference_transform, device)
     with torch.no_grad():
         class_name = get_prediction(tensor, model)
     print(class_name)
-
-def infer(model, image):
-    ...
+    return class_name, 1.0
 
 def main_worker(args):
     # Data loading code
@@ -132,8 +140,8 @@ def main_worker(args):
         print("=> no checkpoint found at '{}'".format(args.checkpoint))
         return None, None, None
     
-def transform_image(image_bytes, inference_transform, device):
-    image = Image.open(io.BytesIO(image_bytes))
+def transform_image(image, inference_transform, device):
+    # image = Image.open(io.BytesIO(image_bytes))
     image = inference_transform(image).unsqueeze(0).to(device)
     return image
 
@@ -198,13 +206,24 @@ def remove_module_in_state_dict(state_dict):
             new_state_dict[k] = v
     return new_state_dict
 
-def mainsct(trafficlight):  
+def draw(img, bbox_coords, labels, confs=None):
+    for _,((x,y,w,h),label, conf) in enumerate(zip(bbox_coords,labels,confs)):
+        color = (0,0,255)
+        label_txt = ''
+        # conf_txt = 'prople'+str(round(conf[0],2))+' helmet'+str(round(conf[1],2))
+        # conf_txt = str(round(conf[0],2))
+        img = cv2.rectangle(img, (x,y),(x+w,y+h),color,4)
+        img = cv2.putText(img,label,(x,y-30),0,0.8,color, thickness=2)
+        # img = cv2.putText(img,conf_txt,(x,y-10),0,0.6,color, thickness=2)
+    return img
+
+def mainsct(model, inference_transform, device):  
     output = subprocess.Popen('xrandr | grep "\*" | cut -d" " -f4',shell=True, stdout=subprocess.PIPE).communicate()[0]
     resolution = output.split()[0].split(b'x')    
 
     sct = mss()
 
-    crop = {'top': 0, 'left': 0, 'width': int(resolution[0]), 'height': int(resolution[1])}
+    crop = {'top': 0, 'left': 0, 'width': int(resolution[0])//2, 'height': int(resolution[1])}
     # result = cv2.VideoWriter('output.mp4', cv2.VideoWriter_fourcc(*'MJPG'), 10, size)
 
     # _,frame = cap.read()
@@ -220,13 +239,21 @@ def mainsct(trafficlight):
         # if ret == False:
         #     print('Video is ended')
         #     break
-        
-        labels, confs = trafficlight.predict(frame, bbox_coords)
-        frame = trafficlight.draw(frame, bbox_coords, labels, confs)
+
+        x,y,w,h = bbox_coords[0]
+        bbox_crop = frame[y:y+h,x:x+w]
+        label, conf = infer(model, bbox_crop, inference_transform, device)
+        labels, confs = [label], [conf]
+        frame = draw(frame, bbox_coords, labels, confs)
+        # labels, confs = trafficlight.predict(frame, bbox_coords)
+        # frame = trafficlight.draw(frame, bbox_coords, labels, confs)
 
         # result.write(frame)
+        # ratio = 0.8
+        # new_h, new_w = (np.array(frame.shape[:2]) * ratio).astype(np.int).tolist()
+        # frame = cv2.resize(frame, (new_w, new_h)) 
 
-        cv2.imshow('frame',frame)
+        cv2.imshow('frame', frame)
         if cv2.waitKey(1) & 0xFF == 27:
             break
 
