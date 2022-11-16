@@ -26,18 +26,18 @@ model_names = sorted(name for name in models.__dict__
 parser = argparse.ArgumentParser(
     description='PyTorch Vehicle Make Classification Training'
 )
-parser.add_argument('data', metavar='DIR', nargs='?', default='input.jpg',
-                    help='path to input image (default: input.jpg)')
+# parser.add_argument('data', metavar='DIR', nargs='?', default='input.jpg',
+#                     help='path to input image (default: input.jpg)')
 parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet50',
                     choices=model_names,
                     help='model architecture: ' +
                         ' | '.join(model_names) +
                         ' (default: resnet50)')
-parser.add_argument('-b', '--batch-size', default=256, type=int,
-                    metavar='N',
-                    help='mini-batch size (default: 256)')
-parser.add_argument('-p', '--print-freq', default=10, type=int,
-                    metavar='N', help='print frequency (default: 10)')
+# parser.add_argument('-b', '--batch-size', default=256, type=int,
+#                     metavar='N',
+#                     help='mini-batch size (default: 256)')
+# parser.add_argument('-p', '--print-freq', default=10, type=int,
+#                     metavar='N', help='print frequency (default: 10)')
 parser.add_argument('--checkpoint', default='', type=str, metavar='PATH',
                     help='path to checkpoint (default: none)')
 parser.add_argument('--augment', action='store_true', help="use data augmentation")
