@@ -8,26 +8,26 @@ This implements training of popular model architectures, such as ResNet, AlexNet
 
 - Install PyTorch ([pytorch.org](http://pytorch.org))
 - `pip install -r requirements.txt`
-- Download the ImageNet dataset from http://www.image-net.org/
-  - Then, move and extract the training and validation images to labeled subfolders, using [the following shell script](extract_ILSVRC.sh)
+- Download the dataset.
+  - Then, move and extract the training and validation images to labeled subfolders.
 
 ## Training
 
-To train a model, run `main.py` with the desired model architecture and the path to the ImageNet dataset:
+To train a model, run `main.py` with the desired model architecture and the path to the dataset:
 
 ```bash
-python main.py -a resnet18 [imagenet-folder with train and val folders]
+python main.py -a resnet18 [folder with train and val folders]
 ```
 
 The default learning rate schedule starts at 0.1 and decays by a factor of 10 every 30 epochs. This is appropriate for ResNet and models with batch normalization, but too high for AlexNet and VGG. Use 0.01 as the initial learning rate for AlexNet or VGG:
 
 ```bash
-python main.py -a alexnet --lr 0.01 [imagenet-folder with train and val folders]
+python main.py -a alexnet --lr 0.01 [folder with train and val folders]
 ```
 
 ## Use Dummy Data
 
-ImageNet dataset is large and time-consuming to download. To get started quickly, run `main.py` using dummy data by "--dummy". It's also useful for training speed benchmark. Note that the loss or accuracy is useless in this case.
+Real dataset is large and time-consuming to download. To get started quickly, run `main.py` using dummy data by "--dummy". It's also useful for training speed benchmark. Note that the loss or accuracy is useless in this case.
 
 ```bash
 python main.py -a resnet18 --dummy
@@ -37,24 +37,24 @@ python main.py -a resnet18 --dummy
 
 You should always use the NCCL backend for multi-processing distributed training since it currently provides the best distributed training performance.
 
-### Single node, multiple GPUs:
+### Single node, multiple GPUs
 
 ```bash
-python main.py -a resnet50 --dist-url 'tcp://127.0.0.1:FREEPORT' --dist-backend 'nccl' --multiprocessing-distributed --world-size 1 --rank 0 [imagenet-folder with train and val folders]
+python main.py -a resnet50 --dist-url 'tcp://127.0.0.1:FREEPORT' --dist-backend 'nccl' --multiprocessing-distributed --world-size 1 --rank 0 [folder with train and val folders]
 ```
 
-### Multiple nodes:
+### Multiple nodes
 
 Node 0:
 
 ```bash
-python main.py -a resnet50 --dist-url 'tcp://IP_OF_NODE0:FREEPORT' --dist-backend 'nccl' --multiprocessing-distributed --world-size 2 --rank 0 [imagenet-folder with train and val folders]
+python main.py -a resnet50 --dist-url 'tcp://IP_OF_NODE0:FREEPORT' --dist-backend 'nccl' --multiprocessing-distributed --world-size 2 --rank 0 [folder with train and val folders]
 ```
 
 Node 1:
 
 ```bash
-python main.py -a resnet50 --dist-url 'tcp://IP_OF_NODE0:FREEPORT' --dist-backend 'nccl' --multiprocessing-distributed --world-size 2 --rank 1 [imagenet-folder with train and val folders]
+python main.py -a resnet50 --dist-url 'tcp://IP_OF_NODE0:FREEPORT' --dist-backend 'nccl' --multiprocessing-distributed --world-size 2 --rank 1 [folder with train and val folders]
 ```
 
 ## Usage
@@ -64,10 +64,10 @@ usage: main.py [-h] [-a ARCH] [-j N] [--epochs N] [--start-epoch N] [-b N] [--lr
                [--dist-url DIST_URL] [--dist-backend DIST_BACKEND] [--seed SEED] [--gpu GPU] [--multiprocessing-distributed] [--dummy]
                [DIR]
 
-PyTorch ImageNet Training
+PyTorch Training
 
 positional arguments:
-  DIR                   path to dataset (default: imagenet)
+  DIR                   path to dataset (default: vn_veri_wild)
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -77,7 +77,7 @@ optional arguments:
                         regnet_x_8gf | regnet_y_128gf | regnet_y_16gf | regnet_y_1_6gf | regnet_y_32gf | regnet_y_3_2gf | regnet_y_400mf | regnet_y_800mf | regnet_y_8gf | resnet101 | resnet152 | resnet18 |
                         resnet34 | resnet50 | resnext101_32x8d | resnext50_32x4d | shufflenet_v2_x0_5 | shufflenet_v2_x1_0 | shufflenet_v2_x1_5 | shufflenet_v2_x2_0 | squeezenet1_0 | squeezenet1_1 | vgg11 |
                         vgg11_bn | vgg13 | vgg13_bn | vgg16 | vgg16_bn | vgg19 | vgg19_bn | vit_b_16 | vit_b_32 | vit_l_16 | vit_l_32 | wide_resnet101_2 | wide_resnet50_2 (default: resnet18)
-  -j N, --workers N     number of data loading workers (default: 4)
+  -j N, --workers N     number of data loading workers (default: 2)
   --epochs N            number of total epochs to run
   --start-epoch N       manual epoch number (useful on restarts)
   -b N, --batch-size N  mini-batch size (default: 256), this is the total batch size of all GPUs on the current node when using Data Parallel or Distributed Data Parallel
@@ -99,8 +99,10 @@ optional arguments:
   --seed SEED           seed for initializing training.
   --gpu GPU             GPU id to use.
   --multiprocessing-distributed
-                        Use multi-processing distributed training to launch N processes per node, which has N GPUs. This is the fastest way to use PyTorch for either single node or multi node data parallel
-                        training
+                        Use multi-processing distributed training to launch N processes per node, which has N GPUs. This is the fastest way to use PyTorch for either single node or multi node data parallel training
   --dummy               use fake data to benchmark
-
+  --weight-sampler      use WeightedRandomSampler
+  --weight-loss         use weight parameter in the loss function
+  --early-stopping      use early stopping
+  --print-model         print model
 ```
