@@ -2,7 +2,7 @@
 
 Train a classification model for vehicle makes in vietnam.
 
-This implements training of popular model architectures, such as ResNet, AlexNet, and VGG on the ImageNet dataset.
+This implements training of popular model architectures, such as ResNet, AlexNet, and VGG on the Veri-Wild dataset.
 
 ## Requirements
 
