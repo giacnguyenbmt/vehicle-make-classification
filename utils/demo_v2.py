@@ -238,13 +238,14 @@ def capture_imgs(model, inference_transform, device, args):
             label, conf = infer(model, bbox_crop, inference_transform, device)
             labels, confs = [label], [conf]
             draw_image = draw(draw_image, bbox_coords, labels, confs)
+            cv2.imwrite("draw.jpg", draw_image)
         
         cv2.imshow('image', draw_image)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-    cv2.imwrite("draw.jpg", draw_image)
+    # cv2.imwrite("draw.jpg", draw_image)
     cv2.destroyAllWindows()
 
 
