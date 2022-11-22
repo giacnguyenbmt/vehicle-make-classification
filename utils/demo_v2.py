@@ -41,7 +41,7 @@ parser.add_argument('--print-model', action='store_true', help="print model")
 def main():
     args = parser.parse_args()
     model, inference_transform, device = main_worker(args)
-    capture_img(model, inference_transform, device, args)
+    capture_imgs(model, inference_transform, device, args)
 
     # mainsct(model, inference_transform, device)
 
@@ -222,6 +222,29 @@ def capture_img(model, inference_transform, device, args):
     cv2.imwrite("draw.jpg", image)
     cv2.imshow('image', image)
     cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+def capture_imgs(model, inference_transform, device, args):
+    image = cv2.imread(args.data)
+    draw_image = image.copy()
+    while True:
+        if cv2.waitKey(1) & 0xFF == ord('d'):
+            cv2.destroyAllWindows()
+            bbox = cv2.selectROI(draw_image)
+            bbox_coords = [bbox]
+
+            x,y,w,h = bbox_coords[0]
+            bbox_crop = image[y:y+h,x:x+w]
+            label, conf = infer(model, bbox_crop, inference_transform, device)
+            labels, confs = [label], [conf]
+            draw_image = draw(draw_image, bbox_coords, labels, confs)
+        
+        cv2.imshow('image', draw_image)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cv2.imwrite("draw.jpg", draw_image)
     cv2.destroyAllWindows()
 
 
