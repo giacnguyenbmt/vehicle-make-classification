@@ -54,7 +54,7 @@ def main():
     draw_image = cv2.putText(draw_image,text_2,(10,10+40),0,0.8,color, thickness=2)
 
     cv2.imshow('window', draw_image)
-    cv2.imwrite('draw.jpg', draw_image)
+    cv2.imwrite(os.path.split(args.data)[-1], draw_image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
