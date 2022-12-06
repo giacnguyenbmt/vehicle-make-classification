@@ -87,6 +87,8 @@ parser.add_argument('--weight-sampler', action='store_true', help="use WeightedR
 parser.add_argument('--weight-loss', action='store_true', help="use weight parameter in the loss function")
 parser.add_argument('--early-stopping', action='store_true', help="use early stopping")
 parser.add_argument('--print-model', action='store_true', help="print model")
+parser.add_argument('--save-dir', default='', type=str, metavar='PATH',
+                    help='directory to save checkpoint (default: none)')
 
 best_acc1 = 0
 
@@ -319,7 +321,7 @@ def main_worker(gpu, ngpus_per_node, args):
     # init early_stopping
     if args.early_stopping:
         print("Early_stopping is used!")
-        early_stopping = EarlyStopping(5, verbose=True, save_full_model=False)
+        early_stopping = EarlyStopping(5, verbose=True, save_full_model=False, save_dir=args.save_dir)
 
     # Evaluation
     if args.evaluate:
@@ -581,7 +583,7 @@ def accuracy(output, target, topk=(1,)):
 
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
-    def __init__(self, patience=7, verbose=False, delta=0, path='{}.pth.tar', trace_func=print, save_full_model=False):
+    def __init__(self, patience=7, verbose=False, delta=0, path='{}.pth.tar', trace_func=print, save_full_model=False, save_dir=''):
         """
         Args:
             patience (int): How long to wait after last time validation loss improved.
@@ -605,6 +607,10 @@ class EarlyStopping:
         self.path = path
         self.trace_func = trace_func
         self.save_full_model = save_full_model
+        self.save_dir = save_dir
+
+        if os.path.isdir(self.save_dir) is False and self.save_dir != '':
+            os.makedirs(self.save_dir)
 
     def __call__(self, 
         val_loss, 
@@ -644,9 +650,9 @@ class EarlyStopping:
         if self.verbose:
             self.trace_func(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
         if self.save_full_model:
-            torch.save(model, '{}.pth'.format(state['arch']))
+            torch.save(model, '{}.pth'.format(os.path.join(self.save_dir, state['arch'])))
         else:
-            torch.save(state, self.path.format(state['arch']))
+            torch.save(state, self.path.format(os.path.join(self.save_dir, state['arch'])))
         self.val_loss_min = val_loss
 
 if __name__ == '__main__':
