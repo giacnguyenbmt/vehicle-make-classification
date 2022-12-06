@@ -105,4 +105,5 @@ optional arguments:
   --weight-loss         use weight parameter in the loss function
   --early-stopping      use early stopping
   --print-model         print model
+  --save-dir            directory to save checkpoint (default: none)
 ```
