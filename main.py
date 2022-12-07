@@ -133,6 +133,7 @@ def main():
 
 
 def main_worker(gpu, ngpus_per_node, args):
+    is_using_data_parallel = False
     global best_acc1
     args.gpu = gpu
 
@@ -261,6 +262,7 @@ def main_worker(gpu, ngpus_per_node, args):
         device = torch.device("mps")
         model = model.to(device)
     else:
+        is_using_data_parallel = True
         # DataParallel will divide and allocate batch_size to all available GPUs
         if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
             model.features = torch.nn.DataParallel(model.features)
@@ -310,7 +312,12 @@ def main_worker(gpu, ngpus_per_node, args):
             if args.gpu is not None:
                 # best_acc1 may be from a checkpoint from a different GPU
                 best_acc1 = best_acc1.to(args.gpu)
-            model.load_state_dict(checkpoint['state_dict'])
+            if is_using_data_parallel:
+                model.load_state_dict(
+                    wrap_state_dict_in_module(checkpoint['state_dict'])
+                )
+            else:
+                model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             scheduler.load_state_dict(checkpoint['scheduler'])
             print("=> loaded checkpoint '{}' (epoch {})"
@@ -370,6 +377,17 @@ def main_worker(gpu, ngpus_per_node, args):
                 'optimizer' : optimizer.state_dict(),
                 'scheduler' : scheduler.state_dict()
             }, is_best)
+
+
+def wrap_state_dict_in_module(state_dict):
+    old_key_list = list(state_dict.keys())
+    new_state_dict = {}
+    for key in old_key_list:
+        if key.startswith('module'):
+            new_state_dict[key] = state_dict[key]
+        else:
+            new_state_dict['module.' + key] = state_dict[key]
+    return new_state_dict
 
 
 def train(train_loader, model, criterion, optimizer, epoch, device, args):
