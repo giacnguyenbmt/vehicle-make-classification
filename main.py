@@ -6,6 +6,8 @@ import time
 import warnings
 from enum import Enum
 
+import albumentations as A
+import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
@@ -18,9 +20,9 @@ import torch.utils.data.distributed
 import torchvision.datasets as datasets
 import torchvision.models as models
 import torchvision.transforms as transforms
+from albumentations.pytorch import ToTensorV2
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Subset, WeightedRandomSampler
-import numpy as np
 
 NUM_CLASS = 19
 
@@ -163,19 +165,30 @@ def main_worker(gpu, ngpus_per_node, args):
 
         if args.augment:
             print("Data augmentation is used!")
-            train_transform = transforms.Compose([
-                transforms.RandomResizedCrop(224, (0.81, 1)),
-                transforms.ColorJitter(0.3, 0.4, 0.3),
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomRotation(10),
-                transforms.ToTensor(),
-                normalize,
+            train_transform = A.Compose([
+                A.GaussNoise(p=0.2),
+                A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=30, p=0.2),
+                A.OpticalDistortion(p=0.2),
+                A.OneOf([
+                    A.CLAHE(clip_limit=2),
+                    A.Emboss(),
+                    A.RandomBrightnessContrast(),
+                ], p=0.3),
+                A.OneOf([
+                    A.HueSaturationValue(p=0.4),
+                    A.ToGray(p=0.1)
+                ], p=0.3),
+                A.ImageCompression(quality_lower=30, quality_upper=80, p=1.0),
+                A.Lambda(image=random_square_crop),
+                A.SmallestMaxSize(max_size=224),
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2()
             ])
-            test_transform = transforms.Compose([
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                normalize,
+            test_transform = A.Compose([
+                A.SmallestMaxSize(max_size=256),
+                A.CenterCrop(height=224, width=224),
+                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                ToTensorV2(),
             ])
         else:
             print("Data augmentation is NOT used!")
@@ -502,6 +515,63 @@ def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     torch.save(state, filename)
     if is_best:
         shutil.copyfile(filename, 'model_best.pth.tar')
+
+
+def random_square_crop(
+    image,
+    crop_ratio_range=None,
+    crop_choice=[0.94, 0.96, 0.98, 1.0, 1.2, 1.4, 1.6, 1.8],
+    **kwargs
+):
+    img = image
+    h, w, c = img.shape
+
+    if crop_ratio_range is not None:
+        crop_ratio_min, crop_ratio_max = crop_ratio_range
+    if crop_ratio_range is not None:
+        scale = np.random.uniform(crop_ratio_min,
+                                  crop_ratio_max)
+    elif crop_choice is not None:
+        scale = np.random.choice(crop_choice)
+
+    short_side = min(w, h)
+    cw = int(scale * short_side)
+    ch = cw
+
+    if w==cw:
+        left = 0
+    elif w>cw:
+        left = random.randint(0, w - cw)
+    else:
+        left = random.randint(w - cw, 0)
+    if h==ch:
+        top = 0
+    elif h>ch:
+        top = random.randint(0, h - ch)
+    else:
+        top = random.randint(h - ch, 0)
+
+    patch = np.array(
+        (int(left), int(top), int(left + cw), int(top + ch)), dtype=int)
+
+    # adjust the img no matter whether the gt is empty before crop
+    #img = img[patch[1]:patch[3], patch[0]:patch[2]]
+    rimg = np.ones( (ch, cw, 3), dtype=img.dtype) * 128
+    patch_from = patch.copy()
+    patch_from[0] = max(0, patch_from[0])
+    patch_from[1] = max(0, patch_from[1])
+    patch_from[2] = min(img.shape[1], patch_from[2])
+    patch_from[3] = min(img.shape[0], patch_from[3])
+    patch_to = patch.copy()
+    patch_to[0] = max(0, patch_to[0]*-1)
+    patch_to[1] = max(0, patch_to[1]*-1)
+    patch_to[2] = patch_to[0] + (patch_from[2] - patch_from[0])
+    patch_to[3] = patch_to[1] + (patch_from[3] - patch_from[1])
+    rimg[patch_to[1]:patch_to[3], patch_to[0]:patch_to[2],:] = img[patch_from[1]:patch_from[3], patch_from[0]:patch_from[2], :]
+    img = rimg
+
+    return img
+
 
 class Summary(Enum):
     NONE = 0
