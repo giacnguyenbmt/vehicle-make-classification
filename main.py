@@ -190,6 +190,14 @@ def main_worker(gpu, ngpus_per_node, args):
                 A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
                 ToTensorV2(),
             ])
+
+            train_dataset = datasets.ImageFolder(
+                traindir, Transforms(transforms=train_transform)
+            )
+            val_dataset = datasets.ImageFolder(
+                valdir, Transforms(transforms=test_transform)
+            )
+
         else:
             print("Data augmentation is NOT used!")
             train_transform = transforms.Compose([
@@ -203,13 +211,12 @@ def main_worker(gpu, ngpus_per_node, args):
                 normalize,
             ])
 
-        train_dataset = datasets.ImageFolder(
-            traindir, train_transform
-        )
-
-        val_dataset = datasets.ImageFolder(
-            valdir, test_transform
-        )
+            train_dataset = datasets.ImageFolder(
+                traindir, train_transform
+            )
+            val_dataset = datasets.ImageFolder(
+                valdir, test_transform
+            )
 
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
@@ -390,6 +397,14 @@ def main_worker(gpu, ngpus_per_node, args):
                 'optimizer' : optimizer.state_dict(),
                 'scheduler' : scheduler.state_dict()
             }, is_best)
+
+
+class Transforms:
+    def __init__(self, transforms: A.Compose):
+        self.transforms = transforms
+
+    def __call__(self, img, *args, **kwargs):
+        return self.transforms(image=np.array(img))['image']
 
 
 def wrap_state_dict_in_module(state_dict):
